@@ -1,28 +1,31 @@
-import socket, time, statistics
+import socket, time
 
-def run_client():
+def run_client(num_connections = 0, msg1 = None, msg2 = None, msg3 = None):
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
+    start_time = time.time()
     server_ip = "127.0.0.1"  
     server_port = 8000 
     client.connect((server_ip, server_port))
-
-    response_times = []  # Store response times
 
     try:
         welcome_msg = client.recv(4096).decode("utf-8")
         print(welcome_msg)
 
         while True:
-            msg = input("Enter message: ")
-            start_time = time.time()
-            client.send(msg.encode("utf-8")[:1024])
+            if msg1 is None:
+                msg = input("Enter message: ")
+                client.send(msg.encode("utf-8")[:1024])
+            else:
+                client.send(msg1.encode("utf-8")[:1024])
+                
+            if msg2 is not None:
+                client.send(msg2.encode("utf-8")[:1024])
 
             response = client.recv(1024)
             end_time = time.time()
 
             response_time = end_time - start_time
-            response_times.append(response_time)
 
             response = response.decode("utf-8")
 
@@ -30,21 +33,19 @@ def run_client():
                 break
 
             print(f"{response}")
+            
+            if msg3 is not None:
+                client.send(msg3.encode("utf-8")[:1024])
     except Exception as e:
         print(f"Error: {e}")
     finally:
         client.close()
         print("Connection to server closed")
 
-        # Calculate statistics
-        response_times.sort()
-        num_responses = len(response_times)
-        lower_bound = int(num_responses * 0.05)
-        upper_bound = num_responses - lower_bound
-        trimmed_response_times = response_times[lower_bound:upper_bound]
-        median = statistics.median(trimmed_response_times)
-        std_dev = statistics.stdev(trimmed_response_times)
-        print(f"Median response time: {median} seconds")
-        print(f"Standard deviation of response times: {std_dev} seconds")
+        # Save time
+        with open(f"response_times_{num_connections}.txt", "a") as f:
+            f.write(f"{response_time}\n")
 
-run_client()
+
+if __name__ == "__main__":
+    run_client()
