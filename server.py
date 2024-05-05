@@ -1,5 +1,5 @@
-import socket, threading
-from my_google_search import MyGoogleSearch 
+import asyncio, socket
+from my_google_search import MyGoogleSearch
 
 WELCOME_MESSAGE = """
         Welcome to the MyGoogle Search server!
@@ -15,51 +15,44 @@ WELCOME_MESSAGE = """
         Enter the number of the desired option and press Enter:
         """
 
-
-def handle_client(client_socket, addr):
+async def handle_client(client_socket, addr, search_engine):
     try:
         client_socket.send(WELCOME_MESSAGE.encode("utf-8"))
         while True:
-            request = client_socket.recv(1024).decode("utf-8")
+            request = await asyncio.to_thread(client_socket.recv, 1024)
+            request = request.decode("utf-8")
+
             if request.lower() == "5":
                 client_socket.send("closed".encode("utf-8"))
                 break
 
-            my_google_search = MyGoogleSearch()
-
-            # upload file
             if request == "1":
                 client_socket.send("Provide the path of the file to be uploaded".encode("utf-8"))
-                path = client_socket.recv(1024).decode("utf-8")
-                response = my_google_search.upload_file(path)
-                response = "File uploaded successfully" if response == 0 else "Path not located"
+                path = await asyncio.to_thread(client_socket.recv, 1024)
+                path = path.decode("utf-8")
+                response = await search_engine.upload_file(path)
 
-            # remove file
-            if request == "2":
+            elif request == "2":
                 client_socket.send("Provide the title of the file to be removed".encode("utf-8"))
-                title = client_socket.recv(1024).decode("utf-8")
-                response = my_google_search.remove_file(title)
-                response = "File removed successfully" if response == 0 else "File not found"
-            
-            # list files
-            if request == "3":
-                titles = str(my_google_search.list_files())
+                title = await asyncio.to_thread(client_socket.recv, 1024)
+                title = title.decode("utf-8")
+                response = await search_engine.remove_file(title)            
+
+            elif request == "3":
+                titles = str(await search_engine.list_files())
                 formatted_titles = [f"{i+1}. {title}" for i, title in enumerate(titles.split("\n"))]
                 response = "\n".join(formatted_titles)
-
-            # search
-            if request == "4":
+                
+            elif request == "4":
                 client_socket.send("Provide the search query".encode("utf-8"))
-                search_query = client_socket.recv(1024).decode("utf-8")
-                total_files, relevant_files = my_google_search.search(search_query)
+                search_query = await asyncio.to_thread(client_socket.recv, 1024)
+                search_query = search_query.decode("utf-8")
+                total_files, relevant_files = await search_engine.search(search_query)
                 response = f"{total_files} files were found\n" if total_files != 1 else f"{total_files} file was found\n"
                 if relevant_files:
-                    response += f"{len(relevant_files)} first relevant files:\n"
-                    for i, file in enumerate(relevant_files):
-                        response += f"{i+1}. {file['title']}\n"
-
+                    response += '\n'.join([f"{i+1}. {file['title']}" for i, file in enumerate(relevant_files)])
+  
             client_socket.send(response.encode("utf-8"))
-
 
     except Exception as e:
         print(f"Error when handling client: {e}")
@@ -68,27 +61,29 @@ def handle_client(client_socket, addr):
         print(f"Connection to client ({addr[0]}:{addr[1]}) closed")
 
 
-def run_server():
+async def run_server():
     server_ip = "127.0.0.1"
     port = 8000
 
     try:
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
         server.bind((server_ip, port))
-
         server.listen()
         print(f"Listening on {server_ip}:{port}")
+
+        search_engine = MyGoogleSearch()
+        await search_engine.load_data()
 
         while True:
             client_socket, addr = server.accept()
             print(f"Accepted connection from {addr[0]}:{addr[1]}")
-            thread = threading.Thread(target=handle_client, args=(client_socket, addr,))
-            thread.start()
+            await asyncio.create_task(handle_client(client_socket, addr, search_engine))
+
     except Exception as e:
         print(f"Error: {e}")
     finally:
         server.close()
 
 
-run_server()
+if __name__ == "__main__":
+    asyncio.run(run_server())

@@ -1,56 +1,75 @@
-import time
-import numpy as np
-from client import run_client
-import multiprocessing
+import asyncio, time
 
-def client_handler(num_connections, msg, msg2, msg3):
-    run_client(num_connections, msg, msg2, msg3)
+async def client_task(server_ip, server_port, num_clients, msg1=None, msg2=None, msg3=None):
+    try:
+        start_time = time.time()
+        reader, writer = await asyncio.open_connection(server_ip, server_port)
 
-def simulate_connections(num_connections, duration):
-    start_time = time.time()
-    end_time = start_time + duration
-    
-    while time.time() < end_time:
-        threads = []
-        for i in range(num_connections):
-            thread = multiprocessing.Process(target=client_handler, args=(num_connections, "4", 'teste', "5"))             # make a search
-            thread.start()
-            threads.append(thread)
-        
-        for thread in threads:
-            thread.join()
-        
-        remaining_time = end_time - time.time()
-        if remaining_time < 0:
-            break
-        
-        time.sleep(1)
-    
-    with open(f"response_times_{num_connections_per_second}.txt", "r") as file:
-        times = []
-        for line in file:
-            line = line.strip()
-            if line:
-                times.append(float(line))
+        welcome_msg = await reader.read(4096)
+        print(welcome_msg.decode("utf-8"))
 
-    times = np.array(times)
+        while True:
+            if msg1 is None:
+                msg = input("Enter message: ")
+                writer.write(msg.encode("utf-8")[:1024])
+                await writer.drain()
+            else:
+                writer.write(msg1.encode("utf-8")[:1024])
+                await writer.drain()
+                response = await reader.read(1024)
+                print(response.decode("utf-8"))
 
-    num_to_discard = int(len(times) * 0.05)
+            if msg2 is not None:
+                writer.write(msg2.encode("utf-8")[:1024])
+                await writer.drain()
 
-    times_sorted = np.sort(times)
+                response = await reader.read(1024)
+                print(response.decode("utf-8"))
 
-    trimmed_times = times_sorted[num_to_discard:-num_to_discard]
+            if msg3 is not None:
+                writer.write(msg3.encode("utf-8")[:1024])
+                await writer.drain()
 
-    average_time = np.mean(trimmed_times)
-    median_time = np.median(trimmed_times)
-    std_deviation = np.std(trimmed_times)
+                response = await reader.read(1024)
+                print(response.decode("utf-8"))
 
-    print("Average Time:", average_time)
-    print("Median Time:", median_time)
-    print("Standard Deviation:", std_deviation)
+                if response.lower() == "closed":
+                    break
+                
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        writer.close()
+        await writer.wait_closed()
+        print("Connection to server closed")
+        response_time = time.time() - start_time
+        with open(f"response_times_{int(num_clients/60)}.txt", "a") as f:
+            f.write(f"{response_time}\n")
+
+
+async def run_clients(server_ip, server_port, num_clients, msg1=None, msg2=None, msg3=None):
+    tasks = []
+    for i in range(num_clients):
+        if i%(num_clients/60) == 0:
+            time.sleep(1)
+        task = asyncio.create_task(client_task(server_ip, server_port, num_clients, msg1, msg2, msg3))
+        tasks.append(task)
+        await asyncio.sleep(1 / num_clients)  # Adjust timing for desired requests per second
+
+    await asyncio.gather(*tasks)
+
+
+async def main():
+    server_ip = "127.0.0.1"
+    server_port = 8000
+
+    num_connections_per_second = 50
+    num_clients = num_connections_per_second*60
+    msg1 = "4"
+    msg2 = "quantos"
+    msg3 = "5"
+
+    await run_clients(server_ip, server_port, num_clients, msg1, msg2, msg3)
 
 if __name__ == "__main__":
-    num_connections_per_second = 50
-    duration = 60
-    
-    simulate_connections(num_connections_per_second, duration)
+    asyncio.run(main())

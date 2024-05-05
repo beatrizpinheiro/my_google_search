@@ -1,11 +1,16 @@
-import socket, time
+import socket
+import asyncio
+import time
 
-def run_client(num_connections = 0, msg1 = None, msg2 = None, msg3 = None):
+async def send_data(client, data):
+    client.send(data)
+
+async def run_client(msg1=None, msg2=None, msg3=None):
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    start_time = time.time()
-    server_ip = "127.0.0.1"  
-    server_port = 8000 
+    server_ip = "127.0.0.1"
+    server_port = 8000
+
     client.connect((server_ip, server_port))
 
     try:
@@ -15,17 +20,16 @@ def run_client(num_connections = 0, msg1 = None, msg2 = None, msg3 = None):
         while True:
             if msg1 is None:
                 msg = input("Enter message: ")
-                client.send(msg.encode("utf-8")[:1024])
+                await send_data(client, msg.encode("utf-8")[:1024])
             else:
-                client.send(msg1.encode("utf-8")[:1024])
-                
+                await send_data(client, msg1.encode("utf-8")[:1024])
+                response = await asyncio.to_thread(client.recv, 1024)
+            
+
             if msg2 is not None:
-                client.send(msg2.encode("utf-8")[:1024])
+                await send_data(client, msg2.encode("utf-8")[:1024])
 
-            response = client.recv(1024)
-            end_time = time.time()
-
-            response_time = end_time - start_time
+            response = await asyncio.to_thread(client.recv, 1024)
 
             response = response.decode("utf-8")
 
@@ -33,19 +37,19 @@ def run_client(num_connections = 0, msg1 = None, msg2 = None, msg3 = None):
                 break
 
             print(f"{response}")
-            
+
             if msg3 is not None:
-                client.send(msg3.encode("utf-8")[:1024])
+                await send_data(client, msg3.encode("utf-8")[:1024])
+                response = await asyncio.to_thread(client.recv, 1024)
+                response = response.decode("utf-8")
+                if response.lower() == "closed":
+                    break
+
     except Exception as e:
         print(f"Error: {e}")
     finally:
         client.close()
         print("Connection to server closed")
 
-        # Save time
-        with open(f"response_times_{num_connections}.txt", "a") as f:
-            f.write(f"{response_time}\n")
-
-
 if __name__ == "__main__":
-    run_client()
+    asyncio.run(run_client())
